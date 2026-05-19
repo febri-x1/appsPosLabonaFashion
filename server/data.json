@@ -1,0 +1,116 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+      "nama_lengkap": "Admin Labona",
+      "role": "admin"
+    },
+    {
+      "id": 2,
+      "username": "owner",
+      "password": "43a0d17178a9d26c9e0fe9a74b0b45e38d32f27aed887a008a54bf6e033bf7b9",
+      "nama_lengkap": "Owner Labona",
+      "role": "owner"
+    },
+    {
+      "id": 3,
+      "username": "kasir",
+      "password": "f02b7c1e519e4fa436147f7e1399974f9510aa9c8e0cb8be29151eb540f9d214",
+      "nama_lengkap": "Kasir Labona",
+      "role": "kasir"
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "kode_produk": "LBN-BLS-001",
+      "nama_produk": "Blouse Linen Cream",
+      "harga_jual": 159000,
+      "stok": 18
+    },
+    {
+      "id": 2,
+      "kode_produk": "LBN-DRS-002",
+      "nama_produk": "Dress Midi Floral",
+      "harga_jual": 249000,
+      "stok": 10
+    },
+    {
+      "id": 3,
+      "kode_produk": "LBN-KMJ-003",
+      "nama_produk": "Kemeja Oversize Denim",
+      "harga_jual": 189000,
+      "stok": 7
+    },
+    {
+      "id": 4,
+      "kode_produk": "LBN-RK-004",
+      "nama_produk": "Rok Plisket Navy",
+      "harga_jual": 139000,
+      "stok": 5
+    },
+    {
+      "id": 5,
+      "kode_produk": "LBN-HJB-005",
+      "nama_produk": "Hijab Voal Premium",
+      "harga_jual": 79000,
+      "stok": 24
+    },
+    {
+      "id": 6,
+      "kode_produk": "LBN-CLN-006",
+      "nama_produk": "Celana Kulot Hitam",
+      "harga_jual": 169000,
+      "stok": 12
+    }
+  ],
+  "discounts": [
+    {
+      "id": 1,
+      "product_id": 2,
+      "nama_diskon": "Promo Dress Mingguan",
+      "tipe_diskon": "persentase",
+      "nilai": 10,
+      "masa_berlaku": "2026-12-31"
+    },
+    {
+      "id": 2,
+      "product_id": 5,
+      "nama_diskon": "Potongan Hijab",
+      "tipe_diskon": "nominal",
+      "nilai": 5000,
+      "masa_berlaku": "2026-12-31"
+    }
+  ],
+  "transactions": [
+    {
+      "id": 1,
+      "user_id": 3,
+      "tanggal_waktu": "2026-05-19T09:20:00.000Z",
+      "total_harga": 328000,
+      "total_bayar": 298100,
+      "uang_tunai": 300000,
+      "uang_kembali": 1900
+    }
+  ],
+  "transaction_details": [
+    {
+      "id": 1,
+      "transaction_id": 1,
+      "product_id": 2,
+      "discount_id": 1,
+      "jumlah": 1,
+      "subtotal": 224100
+    },
+    {
+      "id": 2,
+      "transaction_id": 1,
+      "product_id": 5,
+      "discount_id": 2,
+      "jumlah": 1,
+      "subtotal": 74000
+    }
+  ]
+}
