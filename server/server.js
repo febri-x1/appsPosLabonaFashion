@@ -355,6 +355,90 @@ async function createDiscount(payload) {
   return { status: 201, body: { discount: { id: result.insertId, ...discount } } }
 }
 
+async function updateDiscount(discountId, payload) {
+  const [discounts] = await pool.execute('SELECT * FROM discounts WHERE id = ? LIMIT 1', [
+    discountId,
+  ])
+  const currentDiscount = discounts[0]
+  if (!currentDiscount) {
+    return { status: 404, body: { message: 'Diskon tidak ditemukan.' } }
+  }
+
+  const discount = {
+    product_id:
+      payload.product_id !== undefined ? Number(payload.product_id) : Number(currentDiscount.product_id),
+    nama_diskon:
+      payload.nama_diskon !== undefined
+        ? String(payload.nama_diskon).trim()
+        : currentDiscount.nama_diskon,
+    tipe_diskon:
+      payload.tipe_diskon !== undefined
+        ? payload.tipe_diskon === 'nominal'
+          ? 'nominal'
+          : 'persentase'
+        : currentDiscount.tipe_diskon,
+    nilai: payload.nilai !== undefined ? Number(payload.nilai) : Number(currentDiscount.nilai),
+    masa_berlaku:
+      payload.masa_berlaku !== undefined
+        ? String(payload.masa_berlaku).slice(0, 10)
+        : normalizeDateOnly(currentDiscount.masa_berlaku),
+  }
+
+  const [products] = await pool.execute('SELECT id FROM products WHERE id = ? LIMIT 1', [
+    discount.product_id,
+  ])
+  if (!products.length || !discount.nama_diskon || discount.nilai < 0 || !discount.masa_berlaku) {
+    return { status: 422, body: { message: 'Data diskon belum valid.' } }
+  }
+
+  await pool.execute(
+    `UPDATE discounts
+     SET product_id = ?, nama_diskon = ?, tipe_diskon = ?, nilai = ?, masa_berlaku = ?
+     WHERE id = ?`,
+    [
+      discount.product_id,
+      discount.nama_diskon,
+      discount.tipe_diskon,
+      discount.nilai,
+      discount.masa_berlaku,
+      discountId,
+    ],
+  )
+
+  return { status: 200, body: { discount: { id: discountId, ...discount } } }
+}
+
+async function resetUserPassword(payload) {
+  const userId = Number(payload.user_id)
+  const [users] = await pool.execute(
+    'SELECT id, username, nama_lengkap, role FROM users WHERE id = ? LIMIT 1',
+    [userId],
+  )
+  const user = users[0]
+
+  if (!user) {
+    return { status: 404, body: { message: 'User tidak ditemukan.' } }
+  }
+
+  const password = `${user.username}123`
+  await pool.execute('UPDATE users SET password = ? WHERE id = ?', [
+    hashPassword(password),
+    user.id,
+  ])
+
+  return {
+    status: 200,
+    body: {
+      message: `Password ${user.nama_lengkap} berhasil direset.`,
+      credential: {
+        username: user.username,
+        password,
+        role: user.role,
+      },
+    },
+  }
+}
+
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') {
     sendJson(response, 204, {})
@@ -421,6 +505,34 @@ const server = createServer(async (request, response) => {
         return
       }
       const result = await createDiscount(await readBody(request))
+      sendJson(response, result.status, result.body)
+      return
+    }
+
+    const discountMatch = url.pathname.match(/^\/api\/discounts\/(\d+)$/)
+    if ((request.method === 'PATCH' || request.method === 'POST') && discountMatch) {
+      const auth = requireAuth(request, ['admin'])
+      if (auth.error) {
+        sendJson(response, auth.error.status, { message: auth.error.message })
+        return
+      }
+      const payload = await readBody(request)
+      if (request.method === 'POST' && payload._method !== 'PATCH') {
+        sendJson(response, 404, { message: 'Endpoint tidak ditemukan.' })
+        return
+      }
+      const result = await updateDiscount(Number(discountMatch[1]), payload)
+      sendJson(response, result.status, result.body)
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/users/reset-password') {
+      const auth = requireAuth(request, ['admin'])
+      if (auth.error) {
+        sendJson(response, auth.error.status, { message: auth.error.message })
+        return
+      }
+      const result = await resetUserPassword(await readBody(request))
       sendJson(response, result.status, result.body)
       return
     }

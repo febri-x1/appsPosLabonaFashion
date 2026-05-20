@@ -35,7 +35,15 @@ function CashierPage({
             <button className="product-card" key={product.id} onClick={() => onAddToCart(product)}>
               <span>{product.kode_produk}</span>
               <strong>{product.nama_produk}</strong>
-              <b>{formatMoney(product.harga_jual)}</b>
+              {product.hasPromo ? (
+                <div className="promo-price">
+                  <small>{product.discount?.nama_diskon}</small>
+                  <s>{formatMoney(product.harga_jual)}</s>
+                  <b>{formatMoney(product.promoPrice)}</b>
+                </div>
+              ) : (
+                <b>{formatMoney(product.harga_jual)}</b>
+              )}
               <small className={product.stok <= 5 ? 'danger' : ''}>Stok {product.stok}</small>
             </button>
           ))}
@@ -86,7 +94,7 @@ function CashierPage({
             />
           </label>
           <div><span>Kembalian</span><strong>{formatMoney(change)}</strong></div>
-          <button className="primary-button" onClick={onSubmitTransaction}>Simpan Transaksi</button>
+          <button className="primary-button" onClick={onSubmitTransaction}>Lanjutkan Transaksi</button>
         </div>
       </div>
     </section>

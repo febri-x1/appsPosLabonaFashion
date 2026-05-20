@@ -1,13 +1,41 @@
 import LogoutPanel from '../auth/LogoutPanel'
 
-function AppLayout({ children, loading, notice, onLogout, roleLabel, user }) {
+function AppLayout({
+  activeNav,
+  children,
+  loading,
+  navItems = [],
+  notice,
+  onLogout,
+  onNavChange,
+  roleLabel,
+  user,
+}) {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div>
-          <p className="eyebrow">Labona Fashion</p>
-          <h1>{roleLabel} Panel</h1>
+        <div className="sidebar-main">
+          <div>
+            <p className="eyebrow">Labona Fashion</p>
+            <h1>{roleLabel} Panel</h1>
+          </div>
+
+          {navItems.length ? (
+            <nav className="nav-tabs" aria-label="Menu utama">
+              {navItems.map((item) => (
+                <button
+                  className={activeNav === item.id ? 'active' : ''}
+                  key={item.id}
+                  onClick={() => onNavChange(item.id)}
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          ) : null}
         </div>
+
         <LogoutPanel roleLabel={roleLabel} user={user} onLogout={onLogout} />
       </aside>
 
