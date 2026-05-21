@@ -3,20 +3,22 @@ import { formatDateTime, formatMoney } from '../../utils/formatters'
 
 const PAGE_SIZE = 5
 
-function CashierTransactionHistory({ discountsById, productsById, transactionDetails, transactions }) {
+function CashierTransactionHistory({ discountsById, transactionDetails, transactions, variantsById }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
-  const detailsByTransaction = transactionDetails.reduce((map, detail) => {
-    if (!map[detail.transaction_id]) map[detail.transaction_id] = []
-    map[detail.transaction_id].push(detail)
-    return map
-  }, {})
+  const detailsByTransaction = useMemo(() => {
+    return transactionDetails.reduce((map, detail) => {
+      if (!map[detail.transaction_id]) map[detail.transaction_id] = []
+      map[detail.transaction_id].push(detail)
+      return map
+    }, {})
+  }, [transactionDetails])
 
   const enrichedTransactions = useMemo(() => {
     return transactions.map((transaction) => {
       const details = (detailsByTransaction[transaction.id] || []).map((detail) => {
-        const product = productsById[detail.product_id]
+        const product = variantsById[detail.variant_id]
         const discount = discountsById[detail.discount_id]
         const unitPrice = Number(product?.harga_jual || 0)
         const normalTotal = unitPrice * Number(detail.jumlah)
@@ -34,7 +36,7 @@ function CashierTransactionHistory({ discountsById, productsById, transactionDet
 
       return { ...transaction, details }
     })
-  }, [detailsByTransaction, discountsById, productsById, transactions])
+  }, [detailsByTransaction, discountsById, transactions, variantsById])
 
   const filteredTransactions = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -49,8 +51,10 @@ function CashierTransactionHistory({ discountsById, productsById, transactionDet
         formatMoney(transaction.uang_tunai),
         formatMoney(transaction.uang_kembali),
         ...transaction.details.flatMap((detail) => [
-          detail.product?.kode_produk,
+          detail.product?.sku,
           detail.product?.nama_produk,
+          detail.product?.ukuran,
+          detail.product?.warna,
           detail.discount?.nama_diskon,
           detail.discount?.tipe_diskon,
           detail.discount ? String(detail.discount.nilai) : '',
@@ -107,6 +111,7 @@ function CashierTransactionHistory({ discountsById, productsById, transactionDet
                     <div className="history-item-detail" key={detail.id}>
                       <div>
                         <span>{detail.product?.nama_produk || 'Produk tidak ditemukan'}</span>
+                        <small>{detail.product?.sku} - {detail.product?.ukuran} / {detail.product?.warna}</small>
                         <small>{formatMoney(detail.unitPrice)} x {detail.jumlah}</small>
                         {detail.discount ? (
                           <small>

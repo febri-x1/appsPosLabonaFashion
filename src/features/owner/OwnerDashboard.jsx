@@ -22,7 +22,7 @@ function OwnerDashboard({ dashboard, onRefresh, transactions }) {
           <div className="bar-list">
             {dashboard.bestSellers.map((item) => (
               <div className="bar-row" key={item.product.id}>
-                <span>{item.product.nama_produk}</span>
+                <span>{item.product.nama_produk} - {item.product.ukuran}/{item.product.warna}</span>
                 <div><i style={{ width: `${Math.max(12, item.qty * 18)}px` }} /></div>
                 <b>{item.qty}</b>
               </div>

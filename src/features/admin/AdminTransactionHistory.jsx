@@ -3,7 +3,7 @@ import { formatDateTime, formatMoney } from '../../utils/formatters'
 
 const PAGE_SIZE = 5
 
-function AdminTransactionHistory({ productsById, transactionDetails, transactions, users }) {
+function AdminTransactionHistory({ transactionDetails, transactions, users, variantsById }) {
   const [page, setPage] = useState(1)
   const usersById = Object.fromEntries(users.map((user) => [user.id, user]))
   const detailsByTransaction = transactionDetails.reduce((map, detail) => {
@@ -48,7 +48,10 @@ function AdminTransactionHistory({ productsById, transactionDetails, transaction
                 <div className="history-items">
                   {details.map((detail) => (
                     <div key={detail.id}>
-                      <span>{productsById[detail.product_id]?.nama_produk || 'Produk tidak ditemukan'}</span>
+                      <span>{variantsById[detail.variant_id]?.nama_produk || 'Produk tidak ditemukan'}</span>
+                      <small>
+                        {variantsById[detail.variant_id]?.sku} - {variantsById[detail.variant_id]?.ukuran} / {variantsById[detail.variant_id]?.warna}
+                      </small>
                       <small>Qty {detail.jumlah}</small>
                       <strong>{formatMoney(detail.subtotal)}</strong>
                     </div>

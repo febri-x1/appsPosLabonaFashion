@@ -17,9 +17,10 @@ function ReceiptModal({ onClose, receipt }) {
 
         <div className="receipt-items">
           {details.map((detail) => (
-            <div className="receipt-item" key={`${detail.product_id}-${detail.jumlah}`}>
+            <div className="receipt-item" key={`${detail.variant_id}-${detail.jumlah}`}>
               <div>
                 <strong>{detail.product?.nama_produk || 'Produk tidak ditemukan'}</strong>
+                <small>{detail.product?.sku} - {detail.product?.ukuran} / {detail.product?.warna}</small>
                 <small>{formatMoney(detail.unit_price)} x {detail.jumlah}</small>
                 {detail.discount_amount > 0 ? (
                   <small>Diskon item: - {formatMoney(detail.discount_amount)}</small>

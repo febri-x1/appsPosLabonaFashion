@@ -33,8 +33,9 @@ function CashierPage({
         <div className="product-grid">
           {filteredProducts.map((product) => (
             <button className="product-card" key={product.id} onClick={() => onAddToCart(product)}>
-              <span>{product.kode_produk}</span>
+              <span>{product.sku}</span>
               <strong>{product.nama_produk}</strong>
+              <small>{product.ukuran} / {product.warna}</small>
               {product.hasPromo ? (
                 <div className="promo-price">
                   <small>{product.discount?.nama_diskon}</small>
@@ -62,15 +63,16 @@ function CashierPage({
         <div className="cart-list">
           {cartRows.length ? (
             cartRows.map((item) => (
-              <div className="cart-row" key={item.product_id}>
+              <div className="cart-row" key={item.variant_id}>
                 <div>
                   <strong>{item.product?.nama_produk}</strong>
+                  <small>{item.product?.sku} - {item.product?.ukuran} / {item.product?.warna}</small>
                   <span>{formatMoney(item.product?.harga_jual)} x {item.jumlah}</span>
                 </div>
                 <div className="qty-control">
-                  <button onClick={() => onUpdateQty(item.product_id, -1)}>-</button>
+                  <button onClick={() => onUpdateQty(item.variant_id, -1)}>-</button>
                   <b>{item.jumlah}</b>
-                  <button onClick={() => onUpdateQty(item.product_id, 1)}>+</button>
+                  <button onClick={() => onUpdateQty(item.variant_id, 1)}>+</button>
                 </div>
               </div>
             ))

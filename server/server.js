@@ -64,7 +64,8 @@ function placeholders(values) {
 function normalizeStateRows(state) {
   return {
     users: state.users.map(publicUser),
-    products: normalizeMoneyRows(state.products, ['harga_jual']),
+    products: state.products,
+    product_variants: normalizeMoneyRows(state.product_variants, ['harga_jual']),
     discounts: normalizeMoneyRows(state.discounts, ['nilai']).map((discount) => ({
       ...discount,
       masa_berlaku: normalizeDateOnly(discount.masa_berlaku),
@@ -87,6 +88,7 @@ async function getState() {
     'SELECT id, username, nama_lengkap, role FROM users ORDER BY id',
   )
   const [products] = await pool.query('SELECT * FROM products ORDER BY nama_produk')
+  const [productVariants] = await pool.query('SELECT * FROM product_variants ORDER BY sku')
   const [discounts] = await pool.query('SELECT * FROM discounts ORDER BY masa_berlaku DESC, id DESC')
   const [transactions] = await pool.query(
     'SELECT * FROM transactions ORDER BY tanggal_waktu ASC, id ASC',
@@ -98,6 +100,7 @@ async function getState() {
   return normalizeStateRows({
     users,
     products,
+    product_variants: productVariants,
     discounts,
     transactions,
     transaction_details: transactionDetails,
@@ -121,11 +124,11 @@ async function login(payload) {
 function aggregateItems(items) {
   const map = new Map()
   for (const item of items) {
-    const productId = Number(item.product_id)
+    const variantId = Number(item.variant_id)
     const quantity = Number(item.jumlah)
-    map.set(productId, (map.get(productId) || 0) + quantity)
+    map.set(variantId, (map.get(variantId) || 0) + quantity)
   }
-  return [...map.entries()].map(([product_id, jumlah]) => ({ product_id, jumlah }))
+  return [...map.entries()].map(([variant_id, jumlah]) => ({ variant_id, jumlah }))
 }
 
 function applyDiscount(baseTotal, quantity, discount) {
@@ -136,6 +139,45 @@ function applyDiscount(baseTotal, quantity, discount) {
       : Math.min(baseTotal, Number(discount.nilai) * quantity)
 
   return { subtotal: Math.max(0, baseTotal - discountValue) }
+}
+
+function normalizeProductPayload(payload) {
+  const product = {
+    nama_produk: String(payload.nama_produk || '').trim(),
+    kategori: String(payload.kategori || '').trim(),
+  }
+  const variants = Array.isArray(payload.variants) ? payload.variants : []
+  const normalizedVariants = variants.map((variant) => ({
+    id: variant.id !== undefined ? Number(variant.id) : undefined,
+    sku: String(variant.sku || '').trim(),
+    ukuran: String(variant.ukuran || '').trim(),
+    warna: String(variant.warna || '').trim(),
+    harga_jual: Number(variant.harga_jual),
+    stok: Number(variant.stok),
+  }))
+
+  return { product, variants: normalizedVariants }
+}
+
+function validateProductPayload(product, variants) {
+  if (!product.nama_produk || !product.kategori || variants.length === 0) {
+    return 'Produk dan minimal satu varian wajib diisi.'
+  }
+
+  const invalidVariant = variants.some((variant) => {
+    return (
+      (variant.id !== undefined && (!Number.isInteger(variant.id) || variant.id <= 0)) ||
+      !variant.sku ||
+      !variant.ukuran ||
+      !variant.warna ||
+      Number.isNaN(variant.harga_jual) ||
+      Number.isNaN(variant.stok) ||
+      variant.harga_jual < 0 ||
+      variant.stok < 0
+    )
+  })
+
+  return invalidVariant ? 'Data varian belum valid.' : ''
 }
 
 function validateTransaction(payload, cashier) {
@@ -158,7 +200,16 @@ async function createTransaction(payload, cashier) {
   }
 
   const items = aggregateItems(payload.items)
-  if (items.some((item) => !Number.isInteger(item.jumlah) || item.jumlah <= 0)) {
+  if (
+    items.some((item) => {
+      return (
+        !Number.isInteger(item.variant_id) ||
+        item.variant_id <= 0 ||
+        !Number.isInteger(item.jumlah) ||
+        item.jumlah <= 0
+      )
+    })
+  ) {
     return { status: 422, body: { message: 'Jumlah item transaksi tidak valid.' } }
   }
 
@@ -166,16 +217,24 @@ async function createTransaction(payload, cashier) {
   try {
     await connection.beginTransaction()
 
-    const productIds = items.map((item) => item.product_id)
-    const [products] = await connection.query(
-      `SELECT * FROM products WHERE id IN (${placeholders(productIds)}) FOR UPDATE`,
-      productIds,
+    const variantIds = items.map((item) => item.variant_id)
+    const [variants] = await connection.query(
+      `SELECT v.*, p.nama_produk, p.kategori
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       WHERE v.id IN (${placeholders(variantIds)}) FOR UPDATE`,
+      variantIds,
     )
+    const productIds = [...new Set(variants.map((variant) => variant.product_id))]
+    if (variants.length !== variantIds.length || productIds.length === 0) {
+      await connection.rollback()
+      return { status: 404, body: { message: 'Sebagian varian produk tidak ditemukan.' } }
+    }
     const [discounts] = await connection.query(
       `SELECT * FROM discounts WHERE product_id IN (${placeholders(productIds)}) AND masa_berlaku >= CURDATE() ORDER BY id DESC`,
       productIds,
     )
-    const productsById = Object.fromEntries(products.map((product) => [product.id, product]))
+    const variantsById = Object.fromEntries(variants.map((variant) => [variant.id, variant]))
     const discountsByProductId = Object.fromEntries(
       discounts.map((discount) => [discount.product_id, discount]),
     )
@@ -185,26 +244,28 @@ async function createTransaction(payload, cashier) {
     const details = []
 
     for (const item of items) {
-      const product = productsById[item.product_id]
-      if (!product) {
+      const variant = variantsById[item.variant_id]
+      if (!variant) {
         await connection.rollback()
-        return { status: 404, body: { message: `Produk ${item.product_id} tidak ditemukan.` } }
+        return { status: 404, body: { message: `Varian ${item.variant_id} tidak ditemukan.` } }
       }
-      if (product.stok < item.jumlah) {
+      if (variant.stok < item.jumlah) {
         await connection.rollback()
         return {
           status: 422,
-          body: { message: `Stok ${product.nama_produk} hanya tersisa ${product.stok}.` },
+          body: {
+            message: `Stok ${variant.nama_produk} ${variant.ukuran}/${variant.warna} hanya tersisa ${variant.stok}.`,
+          },
         }
       }
 
-      const baseTotal = Number(product.harga_jual) * item.jumlah
-      const discount = discountsByProductId[product.id]
+      const baseTotal = Number(variant.harga_jual) * item.jumlah
+      const discount = discountsByProductId[variant.product_id]
       const { subtotal } = applyDiscount(baseTotal, item.jumlah, discount)
       totalHarga += baseTotal
       totalBayar += subtotal
       details.push({
-        product_id: product.id,
+        variant_id: variant.id,
         discount_id: discount ? discount.id : null,
         jumlah: item.jumlah,
         subtotal,
@@ -228,13 +289,13 @@ async function createTransaction(payload, cashier) {
     for (const detail of details) {
       await connection.execute(
         `INSERT INTO transaction_details
-          (transaction_id, product_id, discount_id, jumlah, subtotal)
+          (transaction_id, variant_id, discount_id, jumlah, subtotal)
          VALUES (?, ?, ?, ?, ?)`,
-        [transactionId, detail.product_id, detail.discount_id, detail.jumlah, detail.subtotal],
+        [transactionId, detail.variant_id, detail.discount_id, detail.jumlah, detail.subtotal],
       )
-      await connection.execute('UPDATE products SET stok = stok - ? WHERE id = ?', [
+      await connection.execute('UPDATE product_variants SET stok = stok - ? WHERE id = ?', [
         detail.jumlah,
-        detail.product_id,
+        detail.variant_id,
       ])
     }
 
@@ -264,29 +325,57 @@ async function createTransaction(payload, cashier) {
 }
 
 async function createProduct(payload) {
-  const product = {
-    kode_produk: String(payload.kode_produk || '').trim(),
-    nama_produk: String(payload.nama_produk || '').trim(),
-    harga_jual: Number(payload.harga_jual),
-    stok: Number(payload.stok),
-  }
+  const { product, variants } = normalizeProductPayload(payload)
+  const validationMessage = validateProductPayload(product, variants)
+  if (validationMessage) return { status: 422, body: { message: validationMessage } }
 
-  if (!product.kode_produk || !product.nama_produk || product.harga_jual < 0 || product.stok < 0) {
-    return { status: 422, body: { message: 'Data produk belum valid.' } }
-  }
-
+  const connection = await pool.getConnection()
   try {
-    const [result] = await pool.execute(
-      `INSERT INTO products (kode_produk, nama_produk, harga_jual, stok)
-       VALUES (?, ?, ?, ?)`,
-      [product.kode_produk, product.nama_produk, product.harga_jual, product.stok],
+    await connection.beginTransaction()
+
+    const [result] = await connection.execute(
+      `INSERT INTO products (nama_produk, kategori)
+       VALUES (?, ?)`,
+      [product.nama_produk, product.kategori],
     )
-    return { status: 201, body: { product: { id: result.insertId, ...product } } }
+    const productId = result.insertId
+
+    for (const variant of variants) {
+      await connection.execute(
+        `INSERT INTO product_variants
+          (product_id, sku, ukuran, warna, harga_jual, stok)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          productId,
+          variant.sku,
+          variant.ukuran,
+          variant.warna,
+          variant.harga_jual,
+          variant.stok,
+        ],
+      )
+    }
+
+    await connection.commit()
+
+    return {
+      status: 201,
+      body: {
+        product: {
+          id: productId,
+          ...product,
+          variants,
+        },
+      },
+    }
   } catch (error) {
+    await connection.rollback()
     if (error.code === 'ER_DUP_ENTRY') {
-      return { status: 409, body: { message: 'Kode produk sudah digunakan.' } }
+      return { status: 409, body: { message: 'SKU varian sudah digunakan.' } }
     }
     throw error
+  } finally {
+    connection.release()
   }
 }
 
@@ -295,22 +384,95 @@ async function updateProduct(productId, payload) {
   const product = products[0]
   if (!product) return { status: 404, body: { message: 'Produk tidak ditemukan.' } }
 
-  const nextProduct = {
-    nama_produk:
-      payload.nama_produk !== undefined ? String(payload.nama_produk).trim() : product.nama_produk,
-    harga_jual:
-      payload.harga_jual !== undefined ? Number(payload.harga_jual) : Number(product.harga_jual),
-    stok: payload.stok !== undefined ? Number(payload.stok) : Number(product.stok),
-  }
+  const hasVariantsPayload = Array.isArray(payload.variants)
+  const { product: nextProduct, variants } = hasVariantsPayload
+    ? normalizeProductPayload(payload)
+    : {
+        product: {
+          nama_produk:
+            payload.nama_produk !== undefined ? String(payload.nama_produk).trim() : product.nama_produk,
+          kategori: payload.kategori !== undefined ? String(payload.kategori).trim() : product.kategori,
+        },
+        variants: [],
+      }
 
-  if (!nextProduct.nama_produk || nextProduct.harga_jual < 0 || nextProduct.stok < 0) {
+  if (hasVariantsPayload) {
+    const validationMessage = validateProductPayload(nextProduct, variants)
+    if (validationMessage) return { status: 422, body: { message: validationMessage } }
+  } else if (!nextProduct.nama_produk || !nextProduct.kategori) {
     return { status: 422, body: { message: 'Data produk belum valid.' } }
   }
 
-  await pool.execute(
-    'UPDATE products SET nama_produk = ?, harga_jual = ?, stok = ? WHERE id = ?',
-    [nextProduct.nama_produk, nextProduct.harga_jual, nextProduct.stok, productId],
-  )
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    await connection.execute(
+      'UPDATE products SET nama_produk = ?, kategori = ? WHERE id = ?',
+      [nextProduct.nama_produk, nextProduct.kategori, productId],
+    )
+
+    if (hasVariantsPayload) {
+      const existingVariantIds = variants
+        .filter((variant) => variant.id !== undefined)
+        .map((variant) => variant.id)
+
+      if (existingVariantIds.length) {
+        const [ownedVariants] = await connection.query(
+          `SELECT id FROM product_variants
+           WHERE product_id = ? AND id IN (${placeholders(existingVariantIds)})`,
+          [productId, ...existingVariantIds],
+        )
+        if (ownedVariants.length !== existingVariantIds.length) {
+          await connection.rollback()
+          return { status: 422, body: { message: 'Varian tidak sesuai dengan produk ini.' } }
+        }
+      }
+
+      for (const variant of variants) {
+        if (variant.id) {
+          await connection.execute(
+            `UPDATE product_variants
+             SET sku = ?, ukuran = ?, warna = ?, harga_jual = ?, stok = ?
+             WHERE id = ? AND product_id = ?`,
+            [
+              variant.sku,
+              variant.ukuran,
+              variant.warna,
+              variant.harga_jual,
+              variant.stok,
+              variant.id,
+              productId,
+            ],
+          )
+        } else {
+          await connection.execute(
+            `INSERT INTO product_variants
+              (product_id, sku, ukuran, warna, harga_jual, stok)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              productId,
+              variant.sku,
+              variant.ukuran,
+              variant.warna,
+              variant.harga_jual,
+              variant.stok,
+            ],
+          )
+        }
+      }
+    }
+
+    await connection.commit()
+  } catch (error) {
+    await connection.rollback()
+    if (error.code === 'ER_DUP_ENTRY') {
+      return { status: 409, body: { message: 'SKU varian sudah digunakan.' } }
+    }
+    throw error
+  } finally {
+    connection.release()
+  }
 
   return {
     status: 200,
@@ -318,10 +480,60 @@ async function updateProduct(productId, payload) {
       product: {
         ...product,
         ...nextProduct,
-        harga_jual: Number(nextProduct.harga_jual),
-        stok: Number(nextProduct.stok),
       },
     },
+  }
+}
+
+async function updateProductVariant(variantId, payload) {
+  const [variants] = await pool.execute('SELECT * FROM product_variants WHERE id = ? LIMIT 1', [
+    variantId,
+  ])
+  const variant = variants[0]
+  if (!variant) return { status: 404, body: { message: 'Varian produk tidak ditemukan.' } }
+
+  const nextVariant = {
+    sku: payload.sku !== undefined ? String(payload.sku).trim() : variant.sku,
+    ukuran: payload.ukuran !== undefined ? String(payload.ukuran).trim() : variant.ukuran,
+    warna: payload.warna !== undefined ? String(payload.warna).trim() : variant.warna,
+    harga_jual:
+      payload.harga_jual !== undefined ? Number(payload.harga_jual) : Number(variant.harga_jual),
+    stok: payload.stok !== undefined ? Number(payload.stok) : Number(variant.stok),
+  }
+
+  if (
+    !nextVariant.sku ||
+    !nextVariant.ukuran ||
+    !nextVariant.warna ||
+    Number.isNaN(nextVariant.harga_jual) ||
+    Number.isNaN(nextVariant.stok) ||
+    nextVariant.harga_jual < 0 ||
+    nextVariant.stok < 0
+  ) {
+    return { status: 422, body: { message: 'Data varian belum valid.' } }
+  }
+
+  try {
+    await pool.execute(
+      `UPDATE product_variants
+       SET sku = ?, ukuran = ?, warna = ?, harga_jual = ?, stok = ?
+       WHERE id = ?`,
+      [
+        nextVariant.sku,
+        nextVariant.ukuran,
+        nextVariant.warna,
+        nextVariant.harga_jual,
+        nextVariant.stok,
+        variantId,
+      ],
+    )
+
+    return { status: 200, body: { variant: { ...variant, ...nextVariant } } }
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return { status: 409, body: { message: 'SKU varian sudah digunakan.' } }
+    }
+    throw error
   }
 }
 
@@ -494,6 +706,18 @@ const server = createServer(async (request, response) => {
         return
       }
       const result = await updateProduct(Number(productMatch[1]), await readBody(request))
+      sendJson(response, result.status, result.body)
+      return
+    }
+
+    const variantMatch = url.pathname.match(/^\/api\/product-variants\/(\d+)$/)
+    if (request.method === 'PATCH' && variantMatch) {
+      const auth = requireAuth(request, ['admin'])
+      if (auth.error) {
+        sendJson(response, auth.error.status, { message: auth.error.message })
+        return
+      }
+      const result = await updateProductVariant(Number(variantMatch[1]), await readBody(request))
       sendJson(response, result.status, result.body)
       return
     }

@@ -212,6 +212,7 @@ select {
 .product-card span,
 .product-card small,
 .cart-row span,
+.cart-row small,
 .payment-box span,
 .metric-grid span,
 .transaction-list small {
@@ -735,6 +736,28 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+}
+
+.variant-form-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.variant-form-head h3 {
+  margin: 0;
+}
+
+.variant-input-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  background: #fbfcff;
 }
 
 .compact-button {

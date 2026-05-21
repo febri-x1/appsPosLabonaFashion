@@ -8,6 +8,7 @@ export function emptyData() {
   return {
     users: [],
     products: [],
+    product_variants: [],
     discounts: [],
     transactions: [],
     transaction_details: [],

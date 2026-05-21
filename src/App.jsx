@@ -25,6 +25,20 @@ import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || '/api'
 
+const emptyProductForm = () => ({
+  nama_produk: '',
+  kategori: '',
+  variants: [
+    {
+      sku: '',
+      ukuran: '',
+      warna: '',
+      harga_jual: '',
+      stok: '',
+    },
+  ],
+})
+
 const adminNavItems = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'add-product', label: 'Tambah Produk' },
@@ -56,13 +70,9 @@ function App() {
   const [activeCashierPage, setActiveCashierPage] = useState('transaction')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [selectedResetUserId, setSelectedResetUserId] = useState('')
+  const [editingProductId, setEditingProductId] = useState(null)
   const [editingDiscountId, setEditingDiscountId] = useState(null)
-  const [productForm, setProductForm] = useState({
-    kode_produk: '',
-    nama_produk: '',
-    harga_jual: '',
-    stok: '',
-  })
+  const [productForm, setProductForm] = useState(emptyProductForm)
   const [discountForm, setDiscountForm] = useState({
     product_id: '',
     nama_diskon: '',
@@ -81,6 +91,7 @@ function App() {
     setActiveAdminPage('dashboard')
     setActiveCashierPage('transaction')
     setSelectedResetUserId('')
+    setEditingProductId(null)
     setEditingDiscountId(null)
   }, [])
 
@@ -159,6 +170,22 @@ function App() {
     return Object.fromEntries(data.products.map((product) => [product.id, product]))
   }, [data.products])
 
+  const saleItems = useMemo(() => {
+    return data.product_variants.map((variant) => {
+      const product = productsById[variant.product_id]
+      return {
+        ...variant,
+        product,
+        nama_produk: product?.nama_produk || 'Produk tidak ditemukan',
+        kategori: product?.kategori || '',
+      }
+    })
+  }, [data.product_variants, productsById])
+
+  const variantsById = useMemo(() => {
+    return Object.fromEntries(saleItems.map((variant) => [variant.id, variant]))
+  }, [saleItems])
+
   const discountsById = useMemo(() => {
     return Object.fromEntries(data.discounts.map((discount) => [discount.id, discount]))
   }, [data.discounts])
@@ -169,18 +196,21 @@ function App() {
 
   const filteredProducts = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    if (!keyword) return data.products
-    return data.products.filter((product) => {
+    if (!keyword) return saleItems
+    return saleItems.filter((product) => {
       return (
         product.nama_produk.toLowerCase().includes(keyword) ||
-        product.kode_produk.toLowerCase().includes(keyword)
+        product.sku.toLowerCase().includes(keyword) ||
+        product.kategori.toLowerCase().includes(keyword) ||
+        product.ukuran.toLowerCase().includes(keyword) ||
+        product.warna.toLowerCase().includes(keyword)
       )
     })
-  }, [data.products, query])
+  }, [query, saleItems])
 
   const productsWithPromos = useMemo(() => {
     return filteredProducts.map((product) => {
-      const discount = activeDiscounts.find((entry) => entry.product_id === product.id)
+      const discount = activeDiscounts.find((entry) => entry.product_id === product.product_id)
       const price = Number(product.harga_jual || 0)
       let promoPrice = price
 
@@ -202,7 +232,7 @@ function App() {
 
   const cartRows = useMemo(() => {
     return cart.map((item) => {
-      const product = productsById[item.product_id]
+      const product = variantsById[item.variant_id]
       const qty = item.jumlah
       return {
         ...item,
@@ -210,11 +240,11 @@ function App() {
         total: product ? Number(product.harga_jual) * qty : 0,
       }
     })
-  }, [cart, productsById])
+  }, [cart, variantsById])
 
   const totalBeforeDiscount = cartRows.reduce((sum, item) => sum + item.total, 0)
   const estimatedDiscount = cartRows.reduce((sum, item) => {
-    const discount = activeDiscounts.find((entry) => entry.product_id === item.product_id)
+    const discount = activeDiscounts.find((entry) => entry.product_id === item.product?.product_id)
     if (!discount) return sum
     if (discount.tipe_diskon === 'persentase') {
       return sum + (item.total * Number(discount.nilai)) / 100
@@ -237,19 +267,19 @@ function App() {
       (sum, transaction) => sum + Number(transaction.total_bayar),
       0,
     )
-    const lowStock = data.products.filter((product) => product.stok <= 5).length
+    const lowStock = data.product_variants.filter((variant) => variant.stok <= 5).length
     const soldByProduct = data.transaction_details.reduce((map, detail) => {
-      map[detail.product_id] = (map[detail.product_id] || 0) + detail.jumlah
+      map[detail.variant_id] = (map[detail.variant_id] || 0) + detail.jumlah
       return map
     }, {})
     const bestSellers = Object.entries(soldByProduct)
-      .map(([id, qty]) => ({ product: productsById[id], qty }))
+      .map(([id, qty]) => ({ product: variantsById[id], qty }))
       .filter((item) => item.product)
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5)
 
     return { revenue, todayRevenue, todayTransactions, lowStock, bestSellers }
-  }, [data, productsById])
+  }, [data, variantsById])
 
   const cashierTransactions = useMemo(() => {
     if (!session?.user) return []
@@ -310,28 +340,28 @@ function App() {
 
   function addToCart(product) {
     if (product.stok <= 0) {
-      setNotice(`${product.nama_produk} sedang habis.`)
+      setNotice(`${product.nama_produk} ${product.ukuran}/${product.warna} sedang habis.`)
       return
     }
 
     setCart((current) => {
-      const existing = current.find((item) => item.product_id === product.id)
+      const existing = current.find((item) => item.variant_id === product.id)
       if (existing) {
         if (existing.jumlah >= product.stok) return current
         return current.map((item) =>
-          item.product_id === product.id ? { ...item, jumlah: item.jumlah + 1 } : item,
+          item.variant_id === product.id ? { ...item, jumlah: item.jumlah + 1 } : item,
         )
       }
-      return [...current, { product_id: product.id, jumlah: 1 }]
+      return [...current, { variant_id: product.id, jumlah: 1 }]
     })
   }
 
-  function updateQty(productId, delta) {
+  function updateQty(variantId, delta) {
     setCart((current) =>
       current
         .map((item) => {
-          if (item.product_id !== productId) return item
-          const stock = productsById[productId]?.stok || 0
+          if (item.variant_id !== variantId) return item
+          const stock = variantsById[variantId]?.stok || 0
           return { ...item, jumlah: Math.min(stock, Math.max(0, item.jumlah + delta)) }
         })
         .filter((item) => item.jumlah > 0),
@@ -360,7 +390,7 @@ function App() {
       setReceipt({
         cashier: session.user,
         details: result.details.map((detail) => {
-          const product = productsById[detail.product_id]
+          const product = variantsById[detail.variant_id]
           const unitPrice = Number(product?.harga_jual || 0)
           const lineTotal = unitPrice * Number(detail.jumlah)
 
@@ -382,22 +412,61 @@ function App() {
     }
   }
 
-  async function addProduct(event) {
+  async function submitProduct(event) {
     event.preventDefault()
     try {
-      await apiFetch('/products', { method: 'POST', body: JSON.stringify(productForm) })
-      setNotice('Produk baru berhasil ditambahkan.')
-      setProductForm({ kode_produk: '', nama_produk: '', harga_jual: '', stok: '' })
-      setActiveAdminPage('dashboard')
+      if (editingProductId) {
+        await apiFetch(`/products/${editingProductId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(productForm),
+        })
+        setNotice('Produk berhasil diperbarui.')
+      } else {
+        await apiFetch('/products', { method: 'POST', body: JSON.stringify(productForm) })
+        setNotice('Produk baru berhasil ditambahkan.')
+      }
+      setProductForm(emptyProductForm())
+      setEditingProductId(null)
       await loadData()
     } catch (error) {
       setNotice(error.message)
     }
   }
 
-  async function updateStock(product, stok) {
+  function startEditProduct(variant) {
+    const product = productsById[variant.product_id]
+    if (!product) {
+      setNotice('Produk tidak ditemukan.')
+      return
+    }
+
+    const productVariants = saleItems
+      .filter((item) => item.product_id === variant.product_id)
+      .map((item) => ({
+        id: item.id,
+        sku: item.sku,
+        ukuran: item.ukuran,
+        warna: item.warna,
+        harga_jual: String(item.harga_jual),
+        stok: String(item.stok),
+      }))
+
+    setEditingProductId(product.id)
+    setProductForm({
+      nama_produk: product.nama_produk,
+      kategori: product.kategori,
+      variants: productVariants.length ? productVariants : emptyProductForm().variants,
+    })
+  }
+
+  function cancelEditProduct() {
+    setEditingProductId(null)
+    setProductForm(emptyProductForm())
+  }
+
+  async function updateStock(variant, stok) {
     try {
-      await apiFetch(`/products/${product.id}`, {
+      await apiFetch(`/product-variants/${variant.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ stok: Number(stok) }),
       })
@@ -514,6 +583,7 @@ function App() {
         <CashierTransactionHistory
           discountsById={discountsById}
           productsById={productsById}
+          variantsById={variantsById}
           transactionDetails={data.transaction_details}
           transactions={cashierTransactions}
         />
@@ -531,17 +601,21 @@ function App() {
         <AdminDashboard
           discounts={data.discounts}
           products={data.products}
+          variants={data.product_variants}
           productsById={productsById}
         />
       ) : null}
 
       {session.user.role === 'admin' && activeAdminPage === 'add-product' ? (
         <AddProductPage
-          onAddProduct={addProduct}
+          editingProductId={editingProductId}
+          onCancelEditProduct={cancelEditProduct}
+          onEditProduct={startEditProduct}
           onProductFormChange={setProductForm}
+          onSubmitProduct={submitProduct}
           onUpdateStock={updateStock}
           productForm={productForm}
-          products={data.products}
+          variants={saleItems}
         />
       ) : null}
 
@@ -562,6 +636,7 @@ function App() {
       {session.user.role === 'admin' && activeAdminPage === 'transaction-history' ? (
         <AdminTransactionHistory
           productsById={productsById}
+          variantsById={variantsById}
           transactionDetails={data.transaction_details}
           transactions={data.transactions}
           users={data.users}

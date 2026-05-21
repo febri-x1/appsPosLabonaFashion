@@ -1,12 +1,12 @@
 import { formatMoney } from '../../utils/formatters'
 
-function AdminDashboard({ discounts, products, productsById }) {
-  const totalStock = products.reduce((sum, product) => sum + Number(product.stok || 0), 0)
-  const inventoryValue = products.reduce(
-    (sum, product) => sum + Number(product.harga_jual || 0) * Number(product.stok || 0),
+function AdminDashboard({ discounts, products, productsById, variants }) {
+  const totalStock = variants.reduce((sum, variant) => sum + Number(variant.stok || 0), 0)
+  const inventoryValue = variants.reduce(
+    (sum, variant) => sum + Number(variant.harga_jual || 0) * Number(variant.stok || 0),
     0,
   )
-  const lowStock = products.filter((product) => Number(product.stok) <= 5).length
+  const lowStock = variants.filter((variant) => Number(variant.stok) <= 5).length
   const activeDiscounts = discounts.filter((discount) => {
     return new Date(`${discount.masa_berlaku}T23:59:59`) >= new Date()
   }).length
@@ -22,6 +22,7 @@ function AdminDashboard({ discounts, products, productsById }) {
 
       <div className="metric-grid">
         <article><span>Total produk</span><strong>{products.length}</strong></article>
+        <article><span>Total varian</span><strong>{variants.length}</strong></article>
         <article><span>Total stok</span><strong>{totalStock}</strong></article>
         <article><span>Nilai inventori</span><strong>{formatMoney(inventoryValue)}</strong></article>
         <article><span>Stok menipis</span><strong>{lowStock}</strong></article>
