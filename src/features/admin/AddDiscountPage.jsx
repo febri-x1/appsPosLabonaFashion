@@ -6,6 +6,7 @@ function AddDiscountPage({
   editingDiscountId,
   onAddDiscount,
   onCancelEditDiscount,
+  onDeleteDiscount,
   onDiscountFormChange,
   onEditDiscount,
   products,
@@ -72,28 +73,42 @@ function AddDiscountPage({
         </form>
 
         <section className="report-panel">
-          <h3>Produk yang Sedang Diskon</h3>
+          <h3>Daftar Promo</h3>
           <div className="discount-list">
             {sortedDiscounts.length ? (
-              sortedDiscounts.map((discount) => (
-                <article className={editingDiscountId === discount.id ? 'selected-discount' : ''} key={discount.id}>
-                  <div>
-                    <span>{productsById[discount.product_id]?.nama_produk || 'Produk tidak ditemukan'}</span>
-                    <strong>{discount.nama_diskon}</strong>
-                    <small>
-                      {discount.tipe_diskon === 'persentase'
-                        ? `${discount.nilai}%`
-                        : formatMoney(discount.nilai)}
-                    </small>
-                    <small>Berlaku sampai {discount.masa_berlaku}</small>
-                  </div>
-                  <button className="ghost-button compact-button" onClick={() => onEditDiscount(discount)} type="button">
-                    Edit
-                  </button>
-                </article>
-              ))
+              sortedDiscounts.map((discount) => {
+                const isActive = new Date(`${discount.masa_berlaku}T23:59:59`) >= new Date()
+
+                return (
+                  <article className={editingDiscountId === discount.id ? 'selected-discount' : ''} key={discount.id}>
+                    <div>
+                      <div className="discount-title-row">
+                        <span>{productsById[discount.product_id]?.nama_produk || 'Produk tidak ditemukan'}</span>
+                        <small className={`status-badge ${isActive ? 'active' : 'inactive'}`}>
+                          {isActive ? 'Aktif' : 'Tidak aktif'}
+                        </small>
+                      </div>
+                      <strong>{discount.nama_diskon}</strong>
+                      <small>
+                        {discount.tipe_diskon === 'persentase'
+                          ? `${discount.nilai}%`
+                          : formatMoney(discount.nilai)}
+                      </small>
+                      <small>Berlaku sampai {discount.masa_berlaku}</small>
+                    </div>
+                    <div className="discount-actions">
+                      <button className="ghost-button compact-button" onClick={() => onEditDiscount(discount)} type="button">
+                        Edit
+                      </button>
+                      <button className="danger-button compact-button" onClick={() => onDeleteDiscount(discount)} type="button">
+                        Hapus
+                      </button>
+                    </div>
+                  </article>
+                )
+              })
             ) : (
-              <p className="empty-state">Belum ada produk yang sedang diskon.</p>
+              <p className="empty-state">Belum ada promo diskon.</p>
             )}
           </div>
         </section>

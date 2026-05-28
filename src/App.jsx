@@ -69,6 +69,7 @@ function App() {
   const [activeAdminPage, setActiveAdminPage] = useState('dashboard')
   const [activeCashierPage, setActiveCashierPage] = useState('transaction')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showTransactionConfirm, setShowTransactionConfirm] = useState(false)
   const [selectedResetUserId, setSelectedResetUserId] = useState('')
   const [editingProductId, setEditingProductId] = useState(null)
   const [editingDiscountId, setEditingDiscountId] = useState(null)
@@ -90,6 +91,7 @@ function App() {
     setQuery('')
     setActiveAdminPage('dashboard')
     setActiveCashierPage('transaction')
+    setShowTransactionConfirm(false)
     setSelectedResetUserId('')
     setEditingProductId(null)
     setEditingDiscountId(null)
@@ -370,6 +372,7 @@ function App() {
 
   async function submitTransaction() {
     setNotice('')
+    setShowTransactionConfirm(false)
     if (!cart.length) {
       setNotice('Keranjang masih kosong.')
       return
@@ -410,6 +413,20 @@ function App() {
     } catch (error) {
       setNotice(error.message)
     }
+  }
+
+  function requestSubmitTransaction() {
+    setNotice('')
+    if (!cart.length) {
+      setNotice('Keranjang masih kosong.')
+      return
+    }
+    if (Number(cash || 0) < grandTotal) {
+      setNotice('Uang tunai belum mencukupi total bayar.')
+      return
+    }
+
+    setShowTransactionConfirm(true)
   }
 
   async function submitProduct(event) {
@@ -504,6 +521,22 @@ function App() {
     }
   }
 
+  async function deleteDiscount(discount) {
+    const confirmed = window.confirm(`Hapus promo ${discount.nama_diskon}?`)
+    if (!confirmed) return
+
+    try {
+      await apiFetch(`/discounts/${discount.id}`, { method: 'DELETE' })
+      setNotice('Promo berhasil dihapus.')
+      if (editingDiscountId === discount.id) {
+        cancelEditDiscount()
+      }
+      await loadData()
+    } catch (error) {
+      setNotice(error.message)
+    }
+  }
+
   function startEditDiscount(discount) {
     setEditingDiscountId(discount.id)
     setDiscountForm({
@@ -572,7 +605,7 @@ function App() {
           onCashChange={setCash}
           onClearCart={() => setCart([])}
           onQueryChange={setQuery}
-          onSubmitTransaction={submitTransaction}
+          onSubmitTransaction={requestSubmitTransaction}
           onUpdateQty={updateQty}
           query={query}
           totalBeforeDiscount={totalBeforeDiscount}
@@ -626,6 +659,7 @@ function App() {
           editingDiscountId={editingDiscountId}
           onCancelEditDiscount={cancelEditDiscount}
           onAddDiscount={addDiscount}
+          onDeleteDiscount={deleteDiscount}
           onDiscountFormChange={setDiscountForm}
           onEditDiscount={startEditDiscount}
           products={data.products}
@@ -660,6 +694,17 @@ function App() {
           onCancel={() => setShowLogoutConfirm(false)}
           onConfirm={logout}
           title="Konfirmasi Logout"
+        />
+      ) : null}
+
+      {showTransactionConfirm ? (
+        <ConfirmDialog
+          cancelText="Periksa Lagi"
+          confirmText="Proses Transaksi"
+          message={`Pastikan item dan pembayaran sudah benar. Total bayar ${formatMoney(grandTotal)}.`}
+          onCancel={() => setShowTransactionConfirm(false)}
+          onConfirm={submitTransaction}
+          title="Konfirmasi Transaksi"
         />
       ) : null}
 

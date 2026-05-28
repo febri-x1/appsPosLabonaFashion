@@ -24,7 +24,7 @@ function sendJson(response, status, payload) {
   response.writeHead(status, {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,PATCH,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   })
   response.end(JSON.stringify(payload))
@@ -61,6 +61,20 @@ function placeholders(values) {
   return values.map(() => '?').join(', ')
 }
 
+function withDailyReceiptNumbers(transactions) {
+  const countersByDate = {}
+
+  return transactions.map((transaction) => {
+    const transactionDate = normalizeDateTime(transaction.tanggal_waktu).slice(0, 10)
+    countersByDate[transactionDate] = (countersByDate[transactionDate] || 0) + 1
+
+    return {
+      ...transaction,
+      daily_receipt_number: countersByDate[transactionDate],
+    }
+  })
+}
+
 function normalizeStateRows(state) {
   return {
     users: state.users.map(publicUser),
@@ -70,12 +84,12 @@ function normalizeStateRows(state) {
       ...discount,
       masa_berlaku: normalizeDateOnly(discount.masa_berlaku),
     })),
-    transactions: normalizeMoneyRows(state.transactions, [
+    transactions: withDailyReceiptNumbers(normalizeMoneyRows(state.transactions, [
       'total_harga',
       'total_bayar',
       'uang_tunai',
       'uang_kembali',
-    ]).map((transaction) => ({
+    ])).map((transaction) => ({
       ...transaction,
       tanggal_waktu: normalizeDateTime(transaction.tanggal_waktu),
     })),
@@ -278,6 +292,11 @@ async function createTransaction(payload, cashier) {
       return { status: 422, body: { message: 'Uang tunai belum mencukupi total bayar.' } }
     }
 
+    const [dailyTransactions] = await connection.query(
+      'SELECT id FROM transactions WHERE DATE(tanggal_waktu) = CURDATE() FOR UPDATE',
+    )
+    const dailyReceiptNumber = dailyTransactions.length + 1
+
     const [transactionResult] = await connection.execute(
       `INSERT INTO transactions
         (user_id, tanggal_waktu, total_harga, total_bayar, uang_tunai, uang_kembali)
@@ -308,6 +327,7 @@ async function createTransaction(payload, cashier) {
           id: transactionId,
           user_id: cashier.id,
           tanggal_waktu: new Date().toISOString(),
+          daily_receipt_number: dailyReceiptNumber,
           total_harga: totalHarga,
           total_bayar: totalBayar,
           uang_tunai: cash,
@@ -620,6 +640,15 @@ async function updateDiscount(discountId, payload) {
   return { status: 200, body: { discount: { id: discountId, ...discount } } }
 }
 
+async function deleteDiscount(discountId) {
+  const [result] = await pool.execute('DELETE FROM discounts WHERE id = ?', [discountId])
+  if (result.affectedRows === 0) {
+    return { status: 404, body: { message: 'Diskon tidak ditemukan.' } }
+  }
+
+  return { status: 200, body: { message: 'Promo berhasil dihapus.' } }
+}
+
 async function resetUserPassword(payload) {
   const userId = Number(payload.user_id)
   const [users] = await pool.execute(
@@ -746,6 +775,17 @@ const server = createServer(async (request, response) => {
         return
       }
       const result = await updateDiscount(Number(discountMatch[1]), payload)
+      sendJson(response, result.status, result.body)
+      return
+    }
+
+    if (request.method === 'DELETE' && discountMatch) {
+      const auth = requireAuth(request, ['admin'])
+      if (auth.error) {
+        sendJson(response, auth.error.status, { message: auth.error.message })
+        return
+      }
+      const result = await deleteDiscount(Number(discountMatch[1]))
       sendJson(response, result.status, result.body)
       return
     }

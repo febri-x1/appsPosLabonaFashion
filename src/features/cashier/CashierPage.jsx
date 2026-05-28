@@ -1,5 +1,17 @@
 import { formatMoney } from '../../utils/formatters'
 
+function getDiscountPercentage(product) {
+  if (!product.discount) return 0
+  if (product.discount.tipe_diskon === 'persentase') {
+    return Math.min(100, Math.max(0, Number(product.discount.nilai || 0)))
+  }
+
+  const price = Number(product.harga_jual || 0)
+  if (price <= 0) return 0
+
+  return Math.min(100, Math.max(0, (Number(product.discount.nilai || 0) / price) * 100))
+}
+
 function CashierPage({
   cartRows,
   cash,
@@ -39,6 +51,9 @@ function CashierPage({
               {product.hasPromo ? (
                 <div className="promo-price">
                   <small>{product.discount?.nama_diskon}</small>
+                  <span className="promo-badge">
+                    Potongan {getDiscountPercentage(product).toFixed(0)}%
+                  </span>
                   <s>{formatMoney(product.harga_jual)}</s>
                   <b>{formatMoney(product.promoPrice)}</b>
                 </div>

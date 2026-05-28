@@ -1,8 +1,9 @@
-import { formatDateTime, formatMoney } from '../../utils/formatters'
+import { formatDateTime, formatMoney, formatReceiptCode } from '../../utils/formatters'
 
 function ReceiptModal({ onClose, receipt }) {
   const { cashier, details, transaction } = receipt
   const totalDiscount = Number(transaction.total_harga) - Number(transaction.total_bayar)
+  const receiptCode = formatReceiptCode(transaction, details)
 
   return (
     <div className="dialog-backdrop receipt-backdrop" role="presentation">
@@ -10,7 +11,7 @@ function ReceiptModal({ onClose, receipt }) {
         <div className="receipt-header">
           <p className="eyebrow">Labona Fashion</p>
           <h2 id="receipt-title">Nota Transaksi</h2>
-          <span>Nota #{transaction.id}</span>
+          <span>{receiptCode}</span>
           <small>{formatDateTime(transaction.tanggal_waktu)}</small>
           <small>Kasir: {cashier.nama_lengkap}</small>
         </div>
